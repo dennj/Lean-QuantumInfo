@@ -112,8 +112,8 @@ lemma conjTranspose_half_mul_eq_conj
     {A B : HermitianMat d ℂ} (hA : 0 ≤ A) :
     ((A ^ (1/2 : ℝ)).mat * B.mat).conjTranspose * ((A ^ (1/2 : ℝ)).mat * B.mat)
     = (A.conj B.mat).mat := by
-  have := HermitianMat.pow_half_mul hA; simp_all +decide [ ← mul_assoc ] ;
-  simp +decide only [mul_assoc, this]
+  have := HermitianMat.pow_half_mul hA; simp_all [ ← mul_assoc ] ;
+  simp only [mul_assoc, this]
 
 lemma schattenNorm_half_mul_rpow_eq_trace_conj
     {A B : HermitianMat d ℂ} (hA : 0 ≤ A)
@@ -121,21 +121,21 @@ lemma schattenNorm_half_mul_rpow_eq_trace_conj
     (schattenNorm ((A ^ (1/2 : ℝ)).mat * B.mat) (2 * α)) ^ (2 * α) =
     ((A.conj B.mat) ^ α).trace := by
   have h_conj : ((A ^ (1 / 2 : ℝ)).mat * B.mat).conjTranspose * ((A ^ (1 / 2 : ℝ)).mat * B.mat) = (A.conj B.mat).mat := by
-    exact?;
+    exact conjTranspose_half_mul_eq_conj hA;
   unfold schattenNorm;
   rw [ ← Real.rpow_mul ] <;> norm_num [ hα.ne' ];
   · ring_nf; norm_num [ hα.ne' ];
     rw [ ← Matrix.IsHermitian.cfc_eq ];
     rw [ Matrix.conjTranspose_conjTranspose ];
-    exact?;
+    exact congrArg Complex.re (congrArg Matrix.trace (congrArg (cfc fun x => x ^ α) h_conj));
   · have h_eigenvalues_nonneg : ∀ i, 0 ≤ (Matrix.isHermitian_mul_conjTranspose_self ((A ^ (1 / 2 : ℝ)).mat * B.mat).conjTranspose).eigenvalues i := by
       intro i; exact (by
       have := Matrix.eigenvalues_conjTranspose_mul_self_nonneg ( ( A ^ ( 1 / 2 : ℝ ) ).mat * B.mat ) i; aesop;);
-    simp_all +decide [ Matrix.trace, Matrix.IsHermitian.cfc ];
-    simp_all +decide [ Matrix.mul_apply, Matrix.diagonal ];
+    simp_all [ Matrix.trace, Matrix.IsHermitian.cfc ];
+    simp_all [ Matrix.mul_apply, Matrix.diagonal ];
     refine' Finset.sum_nonneg fun i _ => Finset.sum_nonneg fun j _ => _;
     field_simp;
-    exact mul_nonneg ( Real.rpow_nonneg ( h_eigenvalues_nonneg j ) _ ) ( add_nonneg ( sq_nonneg _ ) ( sq_nonneg _ ) )
+    exact mul_nonneg ( Real.rpow_nonneg ( h_eigenvalues_nonneg j ) _ ) (by positivity)
 
 /-!
 The *Schatten–Hölder inequality* for matrix products:
@@ -171,12 +171,12 @@ lemma trace_rpow_conj_le
         have h_nonneg : ∀ (x : ℝ), 0 ≤ x → 0 ≤ x ^ α := by
           exact fun x hx => Real.rpow_nonneg hx α
         generalize_proofs at *;
-        rw [ Matrix.trace ] at *; simp_all +decide [ Matrix.IsHermitian.cfc, Matrix.trace ] ;
-        simp +decide [ Matrix.mul_apply, Matrix.diagonal ] at *; (
+        rw [ Matrix.trace ] at *; simp_all [ Matrix.IsHermitian.cfc ] ;
+        simp [ Matrix.mul_apply, Matrix.diagonal ] at *; (
         refine' Finset.sum_nonneg fun i _ => Finset.sum_nonneg fun j _ => _ ; ring_nf ; (
         exact add_nonneg ( mul_nonneg ( sq_nonneg _ ) ( h_nonneg _ ( by
-          exact? ) ) ) ( mul_nonneg ( h_nonneg _ ( by
-          exact? ) ) ( sq_nonneg _ ) )););
+          exact Matrix.eigenvalues_conjTranspose_mul_self_nonneg M j ) ) ) ( mul_nonneg ( h_nonneg _ ( by
+          exact Matrix.eigenvalues_conjTranspose_mul_self_nonneg M j ) ) ( sq_nonneg _ ) )););
       field_simp;
       convert h_nonneg ( ( A ^ ( 1 / 2 : ℝ ) ).mat * B.mat ) using 1 ) h_schatten_holder ( by positivity );
   -- By definition of Schatten norm, we know that:
@@ -185,9 +185,8 @@ lemma trace_rpow_conj_le
     all_goals generalize_proofs at *;
     · convert schattenNorm_hermitian_pow _ hp using 1
       (generalize_proofs at *; (
-      exact?));
+      exact HermitianMat.rpow_nonneg hA));
     · apply schattenNorm_hermitian_pow hB hq
-      skip
   generalize_proofs at *; (
   -- Substitute the definitions of the Schatten norms into the inequality.
   rw [h_schatten_norm_def.left, h_schatten_norm_def.right] at h_exp
@@ -196,6 +195,6 @@ lemma trace_rpow_conj_le
   have h_exp_simp : (A ^ (1 / 2 : ℝ)) ^ p = A ^ (p / 2 : ℝ) := by
     -- By the properties of exponents, we can simplify the expression using the fact that $(A^a)^b = A^{a*b}$.
     have h_exp_simp : ∀ (a b : ℝ), (A ^ a) ^ b = A ^ (a * b) := by
-      exact?
-    generalize_proofs at *; (exact h_exp_simp (1 / 2 : ℝ) p ▸ by ring)
+      exact fun a b => Eq.symm (HermitianMat.rpow_mul hA)
+    generalize_proofs at *; (exact h_exp_simp (1 / 2 : ℝ) p ▸ by ring_nf)
   generalize_proofs at *; (exact h_contra (by rw [h_exp_simp] at h_exp; exact h_exp))))
