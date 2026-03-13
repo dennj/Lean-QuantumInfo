@@ -487,15 +487,123 @@ private lemma F_tensor_MES_eq_V_rho
   · aesop ( simp_config := { singlePass := true } ) ;
   · intro a; rw [ Finset.sum_eq_single ⟨ ( a, j ), j ⟩ ] <;> aesop;
 
+section Wmat_calculation
+
+variable {dA dB dC : Type*} [Fintype dA] [Fintype dB] [Fintype dC]
+variable [DecidableEq dA] [DecidableEq dB] [DecidableEq dC]
+
+abbrev BigIdx (dA dB dC : Type*) := ((dA × dB) × dB) × (dB × dC)
+abbrev SmallIdx (dA dB dC : Type*) := (dA × dB) × dC
+abbrev MidIdx (dA dB dC : Type*) := (dA × dB) × (dB × (dB × dC))
+
+/-- The associator equivalence (no swap needed).
+    Maps (((dA×dB)×dB)×(dB×dC)) to ((dA×dB)×(dB×(dB×dC))). -/
+private def assoc_equiv (dA dB dC : Type*) :
+    BigIdx dA dB dC ≃ MidIdx dA dB dC :=
+  Equiv.prodAssoc (dA × dB) dB (dB × dC)
+
+variable (dA dB dC) in
+private def T₁_mat (ρAB : HermitianMat (dA × dB) ℂ) :
+    Matrix (BigIdx dA dB dC) (SmallIdx dA dB dC) ℂ :=
+  (V_rho ρAB ⊗ₖ (1 : Matrix (dB × dC) (dB × dC) ℂ)).reindex
+    (Equiv.refl _) (Equiv.prodAssoc dA dB dC).symm
+
+variable (dA dB dC) in
+private def T₂_mat (σBC : HermitianMat (dB × dC) ℂ) :
+    Matrix (SmallIdx dA dB dC) (MidIdx dA dB dC) ℂ :=
+  (1 : Matrix (dA × dB) (dA × dB) ℂ) ⊗ₖ (V_sigma σBC)ᴴ
+
+private def PERM_mat (dA dB dC : Type*) [Fintype dA] [Fintype dB] [Fintype dC]
+    [DecidableEq dA] [DecidableEq dB] [DecidableEq dC] :
+    Matrix (MidIdx dA dB dC) (BigIdx dA dB dC) ℂ :=
+  (1 : Matrix (BigIdx dA dB dC) (BigIdx dA dB dC) ℂ).reindex
+    (assoc_equiv dA dB dC) (Equiv.refl _)
+
+private lemma T₁_isometry [Nonempty dB]
+    (ρAB : HermitianMat (dA × dB) ℂ) (hρ : ρAB.mat.PosDef) :
+    (T₁_mat dA dB dC ρAB)ᴴ * (T₁_mat dA dB dC ρAB) = 1 := by
+  have h_kron : (V_rho ρAB ⊗ₖ (1 : Matrix (dB × dC) (dB × dC) ℂ))ᴴ *
+      (V_rho ρAB ⊗ₖ (1 : Matrix (dB × dC) (dB × dC) ℂ)) = 1 := by
+    have hV := V_rho_isometry ρAB hρ
+    convert congr_arg (fun m => Matrix.kroneckerMap (· * ·) m (1 : Matrix (dB × dC) (dB × dC) ℂ)) hV using 1
+    · ext i j; simp +decide [Matrix.mul_apply, Matrix.kroneckerMap, Matrix.one_apply, Finset.sum_mul]
+      by_cases hij : i.2 = j.2 <;> simp +decide [hij, Finset.sum_ite]
+      · exact Finset.sum_bij (fun x _ => x.1) (by aesop) (by aesop) (by aesop) (by aesop)
+      · exact Finset.sum_eq_zero (by aesop)
+    · ext i j; simp +decide [Matrix.one_apply]; aesop
+  convert congr_arg (Matrix.reindex (Equiv.prodAssoc dA dB dC).symm (Equiv.prodAssoc dA dB dC).symm) h_kron using 1
+  ext i j; simp +decide [Matrix.one_apply]; aesop
+
+set_option maxHeartbeats 400000 in
+private lemma T₂_sq_le_one [Nonempty dB]
+    (σBC : HermitianMat (dB × dC) ℂ) (hσ : σBC.mat.PosDef) :
+    (T₂_mat dA dB dC σBC)ᴴ * (T₂_mat dA dB dC σBC) ≤ 1 := by
+  have hT₂_isometry : (V_sigma σBC).conjTranspose * (V_sigma σBC) = 1 :=
+    V_sigma_isometry σBC hσ
+  convert isometry_mul_conjTranspose_le_one (Matrix.kronecker (1 : Matrix (dA × dB) (dA × dB) ℂ) (V_sigma σBC)) _ using 1
+  · ext ⟨ i, j ⟩ ⟨ k, l ⟩ ; simp +decide [ Matrix.mul_apply, Matrix.kronecker_apply ] ; ring
+    unfold T₂_mat; simp +decide [ Matrix.one_apply, Matrix.kronecker_apply ] ; ring
+    refine' Finset.sum_congr rfl fun x hx => _ ; aesop
+  · convert congr_arg (fun x => Matrix.kronecker (1 : Matrix (dA × dB) (dA × dB) ℂ) x) hT₂_isometry using 1
+    · ext ⟨ i, j ⟩ ⟨ k, l ⟩ ; simp +decide [ Matrix.mul_apply, Matrix.kronecker_apply ] ; ring
+      simp +decide [ Matrix.one_apply, mul_assoc, mul_comm, mul_left_comm, Finset.mul_sum _ _ _ ]
+      split_ifs <;> simp_all +decide [ Finset.sum_ite ]
+      refine' Finset.sum_bij ( fun x _ => x.2 ) _ _ _ _ <;> aesop
+    · aesop
+
+private lemma PERM_isometry : (PERM_mat dA dB dC)ᴴ * PERM_mat dA dB dC = 1 := by
+  simp [PERM_mat]
+
+/-- Element-wise identity: W_mat = ∑_{b*} V_rho * V_sigma†.
+    This is the key computation from Eq. (6) of Lin-Kim-Hsieh. -/
+private lemma W_mat_entry (ρAB : HermitianMat (dA × dB) ℂ) (σBC : HermitianMat (dB × dC) ℂ)
+    (i j : SmallIdx dA dB dC) :
+    W_mat ρAB σBC i j =
+      ∑ b_star : dB,
+        V_rho ρAB ((i.1, b_star)) j.1.1 *
+        (V_sigma σBC)ᴴ i.2 (b_star, (j.1.2, j.2)) := by
+  sorry
+
+/-- Element-wise identity: RHS = ∑_{b*} V_rho * V_sigma†. -/
+private lemma RHS_entry (ρAB : HermitianMat (dA × dB) ℂ) (σBC : HermitianMat (dB × dC) ℂ)
+    (i j : SmallIdx dA dB dC) :
+    (T₂_mat dA dB dC σBC * PERM_mat dA dB dC * T₁_mat dA dB dC ρAB) i j =
+      ∑ b_star : dB,
+        V_rho ρAB ((i.1, b_star)) j.1.1 *
+        (V_sigma σBC)ᴴ i.2 (b_star, (j.1.2, j.2)) := by
+  sorry
+
+private lemma W_mat_eq_three_factors [Nonempty dA] [Nonempty dB] [Nonempty dC]
+    (ρAB : HermitianMat (dA × dB) ℂ) (σBC : HermitianMat (dB × dC) ℂ) :
+    W_mat ρAB σBC =
+      T₂_mat dA dB dC σBC * PERM_mat dA dB dC * T₁_mat dA dB dC ρAB := by
+  ext i j
+  rw [W_mat_entry, RHS_entry]
+
 /-- Core inequality: W†W ≤ I.
 This is the key step, following from the isometry argument:
 V_rho ⊗ I_C and I_A ⊗ V_sigma are isometries, their cross product has norm ≤ 1,
 and the result can be related to W_mat through the MES computation (Eq. 6 in Lin-Kim-Hsieh). -/
-private lemma W_mat_sq_le_one [Nonempty dA] [Nonempty dB] [Nonempty dC]
+theorem W_mat_sq_le_one [Nonempty dA] [Nonempty dB] [Nonempty dC]
     (ρAB : HermitianMat (dA × dB) ℂ) (σBC : HermitianMat (dB × dC) ℂ)
     (hρ : ρAB.mat.PosDef) (hσ : σBC.mat.PosDef) :
     (W_mat ρAB σBC)ᴴ * (W_mat ρAB σBC) ≤ 1 := by
-  sorry
+  rw [W_mat_eq_three_factors]
+  have h_T₂ := T₂_sq_le_one (dA := dA) σBC hσ
+  have h_step1 : (PERM_mat dA dB dC)ᴴ * ((T₂_mat dA dB dC σBC)ᴴ * (T₂_mat dA dB dC σBC)) *
+      PERM_mat dA dB dC ≤ 1 := by
+    calc _ ≤ (PERM_mat dA dB dC)ᴴ * 1 * PERM_mat dA dB dC :=
+          Matrix.PosSemidef.conjTranspose_mul_mul_mono _ h_T₂
+        _ = 1 := by rw [Matrix.mul_one, PERM_isometry]
+  calc _ = (T₁_mat dA dB dC ρAB)ᴴ * ((PERM_mat dA dB dC)ᴴ *
+          ((T₂_mat dA dB dC σBC)ᴴ * (T₂_mat dA dB dC σBC)) *
+          PERM_mat dA dB dC) * (T₁_mat dA dB dC ρAB) := by
+        simp [Matrix.conjTranspose_mul, Matrix.mul_assoc]
+      _ ≤ (T₁_mat dA dB dC ρAB)ᴴ * 1 * (T₁_mat dA dB dC ρAB) :=
+        Matrix.PosSemidef.conjTranspose_mul_mul_mono _ h_step1
+      _ = 1 := by rw [Matrix.mul_one, T₁_isometry _ hρ]
+
+end Wmat_calculation
 
 /- S_mat is invertible (since ρ_A and σ_BC are positive definite). -/
 private lemma S_mat_isUnit [Nonempty dA] [Nonempty dB] [Nonempty dC]
